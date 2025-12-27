@@ -1,0 +1,22 @@
+{
+  "name": "car-app",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "NODE_ENV=production bun run index.ts",
+    "dev": "NODE_ENV=development bun --watch index.ts",
+    "build": "bun build index.ts --target=bun --outdir=./dist",
+    "health": "curl -f http://localhost:${PORT:-3000}/health || exit 1",
+    "ready": "curl -f http://localhost:${PORT:-3000}/ready || exit 1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "elysia": "^1.4.19"
+  }
+}
