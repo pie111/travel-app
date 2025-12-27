@@ -1,283 +1,175 @@
-// ============================================================================
-// Production-Ready Server Configuration
-// ============================================================================
+/**
+ * Finance App - ElysiaJS Server
+ * Production-ready server with graceful shutdown and health checks
+ */
 
-import { router, type RouterContext } from './src/routes';
+import { Elysia } from 'elysia';
+import { healthPlugin } from './src/plugins/health';
+import { carsPlugin } from './src/plugins/cars';
+import { travelPlugin } from './src/plugins/travel';
+import { logger } from './src/logger';
+import { openapi } from '@elysiajs/openapi';
+import { staticPlugin } from '@elysiajs/static';
 
+
+// ============================================================================
 // Environment Configuration
+// ============================================================================
+
 const PORT = process.env.PORT || 3000;
-const SHUTDOWN_TIMEOUT = parseInt(process.env.SHUTDOWN_TIMEOUT || '30000', 10); // 30 seconds
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // ============================================================================
-// Logging Utilities
+// Main Application
 // ============================================================================
 
-enum LogLevel {
-    INFO = 'INFO',
-    WARN = 'WARN',
-    ERROR = 'ERROR',
-}
+const app = new Elysia()
+    // Serve static files from client folder
+    .use(staticPlugin({
+        assets: 'client',
+        prefix: '/client',
+    }))
 
-function log(level: LogLevel, message: string, meta?: Record<string, any>) {
-    const timestamp = new Date().toISOString();
-    const logEntry = {
-        timestamp,
-        level,
-        message,
-        env: NODE_ENV,
-        ...meta,
-    };
-    console.log(JSON.stringify(logEntry));
-}
+    // Serve the React app at root
+    .get('/', () => Bun.file('client/index.html'))
 
-// ============================================================================
-// Server State Management
-// ============================================================================
+    // API info endpoint
+    .get('/api', () => ({
+        message: 'Finance App API',
+        version: '1.0.0',
+        environment: NODE_ENV,
+        timestamp: new Date().toISOString(),
+        docs: '/swagger',
+    }))
 
-let isShuttingDown = false;
-let activeConnections = 0;
-let server: ReturnType<typeof Bun.serve> | null = null;
+    // Register plugins
+    .use(healthPlugin)
+    .use(carsPlugin)
+    .use(travelPlugin)
+    .use(openapi())
 
-// ============================================================================
-// Health Check State
-// ============================================================================
-
-let isReady = false;
-
-// ============================================================================
-// Request Handler
-// ============================================================================
-
-async function handleRequest(req: Request): Promise<Response> {
-    const url = new URL(req.url);
-    const path = url.pathname;
-    const method = req.method;
-
-    // Log incoming request
-    log(LogLevel.INFO, 'Incoming request', {
-        method,
-        path,
-        userAgent: req.headers.get('user-agent'),
-    });
-
-    try {
-        // Delegate to the router
-        const context: RouterContext = {
-            isShuttingDown,
-            isReady,
+    // Global error handler
+    .onError(({ code, error, set }) => {
+        // Helper to safely extract error message
+        const getErrorMessage = (err: unknown): string => {
+            if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+                return err.message;
+            }
+            return String(err);
         };
 
-        return router(req, context);
-    } catch (error) {
-        // Request-level error handling
-        log(LogLevel.ERROR, 'Request handler error', {
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            path,
-            method,
-        });
+        const errorMessage = getErrorMessage(error);
+        const errorStack = error && typeof error === 'object' && 'stack' in error ? error.stack : undefined;
 
-        return new Response(
-            JSON.stringify({
-                error: 'Internal Server Error',
-                message: NODE_ENV === 'development' && error instanceof Error ? error.message : undefined,
-            }),
-            {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' },
-            }
-        );
-    }
-}
+        logger.error({
+            code,
+            message: errorMessage,
+            stack: NODE_ENV === 'development' ? errorStack : undefined,
+        }, 'Request error');
 
-// ============================================================================
-// Graceful Shutdown Handler
-// ============================================================================
-
-async function gracefulShutdown(signal: string) {
-    if (isShuttingDown) {
-        log(LogLevel.WARN, 'Shutdown already in progress, ignoring signal', { signal });
-        return;
-    }
-
-    isShuttingDown = true;
-    isReady = false;
-
-    log(LogLevel.INFO, 'Received shutdown signal, starting graceful shutdown', {
-        signal,
-        activeConnections,
-    });
-
-    // Stop accepting new connections
-    if (server) {
-        try {
-            server.stop();
-            log(LogLevel.INFO, 'Server stopped accepting new connections');
-        } catch (error) {
-            log(LogLevel.ERROR, 'Error stopping server', {
-                error: error instanceof Error ? error.message : String(error),
-            });
+        if (code === 'VALIDATION') {
+            set.status = 400;
+            return {
+                error: 'Validation Error',
+                message: errorMessage,
+            };
         }
-    }
 
-    // Wait for active connections to complete or timeout
-    const shutdownStart = Date.now();
-    const checkInterval = 100; // Check every 100ms
+        if (code === 'NOT_FOUND') {
+            set.status = 404;
+            return {
+                error: 'Not Found',
+                message: 'The requested resource was not found',
+            };
+        }
 
-    while (activeConnections > 0 && Date.now() - shutdownStart < SHUTDOWN_TIMEOUT) {
-        log(LogLevel.INFO, 'Waiting for active connections to complete', {
-            activeConnections,
-            elapsed: Date.now() - shutdownStart,
-        });
-        await Bun.sleep(checkInterval);
-    }
+        set.status = 500;
+        return {
+            error: 'Internal Server Error',
+            message: NODE_ENV === 'development' ? errorMessage : 'An unexpected error occurred',
+        };
+    })
 
-    if (activeConnections > 0) {
-        log(LogLevel.WARN, 'Shutdown timeout reached, forcing shutdown', {
-            activeConnections,
-            timeout: SHUTDOWN_TIMEOUT,
-        });
-    } else {
-        log(LogLevel.INFO, 'All connections closed gracefully');
-    }
+    // Request logging
+    .onRequest(({ request }) => {
+        logger.info({
+            method: request.method,
+            url: request.url,
+            userAgent: request.headers.get('user-agent'),
+        }, 'Incoming request');
+    })
 
-    // Perform cleanup (database connections, file handles, etc.)
-    await cleanup();
-
-    log(LogLevel.INFO, 'Graceful shutdown complete', {
-        signal,
-        duration: Date.now() - shutdownStart,
+    // Response logging
+    .onAfterHandle(({ request, set }) => {
+        logger.info({
+            method: request.method,
+            url: request.url,
+            status: set.status,
+        }, 'Request completed');
     });
 
-    process.exit(0);
-}
-
 // ============================================================================
-// Cleanup Handler
-// ============================================================================
-
-async function cleanup() {
-    log(LogLevel.INFO, 'Running cleanup tasks');
-
-    // Add your cleanup logic here:
-    // - Close database connections
-    // - Close file handles
-    // - Flush logs
-    // - Clear caches
-    // - etc.
-
-    // Example:
-    // await db.close();
-    // await cache.flush();
-
-    log(LogLevel.INFO, 'Cleanup tasks completed');
-}
-
-// ============================================================================
-// Global Error Handlers
-// ============================================================================
-
-process.on('uncaughtException', (error: Error) => {
-    log(LogLevel.ERROR, 'Uncaught exception', {
-        error: error.message,
-        stack: error.stack,
-    });
-
-    // In production, you might want to restart the process
-    // For now, we'll do a graceful shutdown
-    gracefulShutdown('uncaughtException');
-});
-
-process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
-    log(LogLevel.ERROR, 'Unhandled promise rejection', {
-        reason: reason instanceof Error ? reason.message : String(reason),
-        stack: reason instanceof Error ? reason.stack : undefined,
-    });
-
-    // In production, you might want to restart the process
-    // For now, we'll do a graceful shutdown
-    gracefulShutdown('unhandledRejection');
-});
-
-// ============================================================================
-// Signal Handlers
-// ============================================================================
-
-// SIGTERM - Graceful shutdown (sent by Kubernetes, Docker, etc.)
-process.on('SIGTERM', () => {
-    gracefulShutdown('SIGTERM');
-});
-
-// SIGINT - Graceful shutdown (Ctrl+C)
-process.on('SIGINT', () => {
-    gracefulShutdown('SIGINT');
-});
-
-// SIGHUP - Graceful shutdown (terminal hangup)
-process.on('SIGHUP', () => {
-    gracefulShutdown('SIGHUP');
-});
-
-// Note: SIGKILL cannot be caught or handled by the application
-// It immediately terminates the process without cleanup
-
-// ============================================================================
-// Server Initialization
+// Server Startup
 // ============================================================================
 
 try {
-    server = Bun.serve({
-        port: PORT,
-        async fetch(req) {
-            activeConnections++;
-            try {
-                const response = await handleRequest(req);
-                return response;
-            } finally {
-                activeConnections--;
-            }
-        },
-        error(error) {
-            log(LogLevel.ERROR, 'Server error', {
-                error: error.message,
-                stack: error.stack,
-            });
+    app.listen(Number(PORT));
 
-            return new Response(
-                JSON.stringify({
-                    error: 'Internal Server Error',
-                }),
-                {
-                    status: 500,
-                    headers: { 'Content-Type': 'application/json' },
-                }
-            );
-        },
-    });
-
-    // Set process title for easier identification
-    process.title = `bun-server-${PORT}`;
-
-    // Mark server as ready
-    isReady = true;
-
-    log(LogLevel.INFO, 'Server started successfully', {
-        url: server.url.toString(),
+    logger.info({
+        url: `http://${app.server?.hostname}:${app.server?.port}`,
         port: PORT,
         environment: NODE_ENV,
-        pid: process.pid,
-        nodeVersion: process.version,
-    });
-
-    log(LogLevel.INFO, 'Health endpoints available', {
-        health: `${server.url}health`,
-        ready: `${server.url}ready`,
-    });
+    }, 'Server started successfully');
 } catch (error) {
-    log(LogLevel.ERROR, 'Failed to start server', {
+    logger.fatal({
         error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-    });
+        port: PORT,
+    }, 'Failed to start server');
     process.exit(1);
 }
+
+
+// ============================================================================
+// Graceful Shutdown
+// ============================================================================
+
+const shutdown = async (signal: string) => {
+    logger.info({ signal }, 'Received shutdown signal');
+
+    try {
+        // Stop accepting new connections
+        app.stop();
+
+        logger.info('Server stopped gracefully');
+
+        process.exit(0);
+    } catch (error) {
+        logger.error({
+            error: error instanceof Error ? error.message : String(error),
+        }, 'Error during shutdown');
+
+        process.exit(1);
+    }
+};
+
+// Signal handlers
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGHUP', () => shutdown('SIGHUP'));
+
+// Error handlers
+process.on('uncaughtException', (error: Error) => {
+    logger.fatal({
+        error: error.message,
+        stack: error.stack,
+    }, 'Uncaught exception');
+    shutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', (reason: any) => {
+    logger.fatal({
+        reason: reason instanceof Error ? reason.message : String(reason),
+        stack: reason instanceof Error ? reason.stack : undefined,
+    }, 'Unhandled promise rejection');
+    shutdown('unhandledRejection');
+});
