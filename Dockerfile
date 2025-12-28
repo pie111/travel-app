@@ -15,11 +15,15 @@ RUN bun install --frozen-lockfile
 # Copy source code
 COPY . .
 
-# Build the client using Vite
-RUN bunx vite build
+# Force fresh build by invalidating cache (update this to force rebuild)
+ARG CACHE_BUST=1
+
+# Build the client using Vite with verbose output
+RUN echo "=== Starting Vite build ===" && \
+    bunx vite build --debug 2>&1 || { echo "=== Vite build failed ==="; exit 1; }
 
 # Debug: List what was built
-RUN echo "=== BUILD OUTPUT ===" && ls -la client/dist/
+RUN echo "=== BUILD OUTPUT ===" && ls -la client/dist/ && echo "=== End BUILD OUTPUT ==="
 
 # Stage 2: Production
 FROM oven/bun:1.3-alpine AS production
