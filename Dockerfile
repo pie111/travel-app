@@ -18,6 +18,9 @@ COPY . .
 # Build the client using Vite
 RUN bunx vite build
 
+# Debug: List what was built
+RUN echo "=== BUILD OUTPUT ===" && ls -la client/dist/
+
 # Stage 2: Production
 FROM oven/bun:1.3-alpine AS production
 
@@ -30,6 +33,9 @@ RUN bun install --frozen-lockfile --production
 # Copy built client from builder stage (Vite outputs to client/dist)
 # This includes main.js and main.css (no index.html from Vite)
 COPY --from=builder /app/client/dist ./dist
+
+# Debug: Verify files were copied
+RUN echo "=== DIST FOLDER CONTENTS ===" && ls -la dist/
 
 # Create production index.html that references the built assets
 # Vite outputs main.js and main.css without hashes in this config
