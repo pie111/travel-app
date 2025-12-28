@@ -8,6 +8,7 @@ import { healthPlugin } from './src/plugins/health';
 import { carsPlugin } from './src/plugins/cars';
 import { travelPlugin } from './src/plugins/travel';
 import { authPlugin } from './src/middleware/auth';
+import { analyticsPlugin } from './src/middleware/analytics';
 import { logger } from './src/logger';
 import { openapi } from '@elysiajs/openapi';
 
@@ -59,7 +60,8 @@ const app = new Elysia()
     }))
 
     // Register plugins
-    .use(authPlugin)      // Auth must be first to protect API routes
+    .use(analyticsPlugin)  // Analytics first to track all requests
+    .use(authPlugin)       // Auth to protect API routes
     .use(healthPlugin)
     .use(carsPlugin)
     .use(travelPlugin)
