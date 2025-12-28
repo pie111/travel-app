@@ -35,28 +35,12 @@ COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile --production
 
 # Copy built client from builder stage (Vite outputs to client/dist)
-# This includes main.js and main.css (no index.html from Vite)
+# This includes index.html and assets/ folder with hashed JS/CSS files
 COPY --from=builder /app/client/dist ./dist
 
-# Debug: Verify files were copied
-RUN echo "=== DIST FOLDER CONTENTS ===" && ls -la dist/
-
-# Create production index.html that references the built assets
-# Vite outputs main.js and main.css without hashes in this config
-RUN echo '<!DOCTYPE html>\
-<html lang="en">\
-<head>\
-<meta charset="UTF-8">\
-<meta name="viewport" content="width=device-width, initial-scale=1.0">\
-<meta name="description" content="Find your perfect travel destination with AI-powered recommendations">\
-<title>Travel Planner - AI-Powered Travel</title>\
-<link rel="stylesheet" href="/main.css">\
-</head>\
-<body>\
-<div id="root"></div>\
-<script type="module" src="/main.js"></script>\
-</body>\
-</html>' > ./dist/index.html
+# Debug: Verify files were copied (including assets folder)
+RUN echo "=== DIST FOLDER CONTENTS ===" && ls -la dist/ && \
+    echo "=== ASSETS FOLDER ===" && ls -la dist/assets/ 2>/dev/null || echo "No assets folder"
 
 # Copy server source files
 COPY --from=builder /app/index.ts ./
