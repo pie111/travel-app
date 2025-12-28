@@ -24,17 +24,29 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 // ============================================================================
 
 const app = new Elysia()
-    // Serve static assets from dist folder (includes assets/ subfolder)
-    .use(staticPlugin({
-        assets: 'dist',
-        prefix: '/',
-        alwaysStatic: true,
-    }))
+    // Serve static assets from dist/assets/ folder using wildcard route
+    // This avoids Bun's import resolution that happens with staticPlugin
+    .get('/assets/*', async ({ params, set }) => {
+        const filename = params['*'];
+        const file = Bun.file(`dist/assets/${filename}`);
+        if (await file.exists()) {
+            // Set appropriate content-type based on extension
+            if (filename.endsWith('.js')) {
+                set.headers['content-type'] = 'application/javascript; charset=utf-8';
+            } else if (filename.endsWith('.css')) {
+                set.headers['content-type'] = 'text/css; charset=utf-8';
+            }
+            return file;
+        }
+        set.status = 404;
+        return { error: 'File not found' };
+    })
 
-    // Serve the React app at root
-    .get('/', ({ set }) => {
+    // Serve the React app at root - read file content to avoid Bun import resolution
+    .get('/', async ({ set }) => {
         set.headers['content-type'] = 'text/html; charset=utf-8';
-        return Bun.file('dist/index.html');
+        const file = Bun.file('dist/index.html');
+        return await file.text();
     })
 
     // API info endpoint
