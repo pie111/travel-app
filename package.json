@@ -6,15 +6,19 @@
   "scripts": {
     "start": "NODE_ENV=production bun run index.ts",
     "dev": "NODE_ENV=development bun --watch index.ts",
+    "dev:client": "vite",
+    "dev:full": "concurrently \"bun run dev\" \"bun run dev:client\"",
     "build": "bun build index.ts --target=bun --outdir=./dist",
-    "build:client": "bun build client/src/main.tsx --outdir=client/dist --minify",
+    "build:client": "vite build",
     "health": "curl -f http://localhost:${PORT:-3000}/health || exit 1",
     "ready": "curl -f http://localhost:${PORT:-3000}/ready || exit 1"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/react": "^19.2.7",
-    "@types/react-dom": "^19.2.3"
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
+    "vite": "5"
   },
   "peerDependencies": {
     "typescript": "^5"

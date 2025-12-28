@@ -34,19 +34,8 @@ function App() {
             <div className="bg-grid" />
 
             {/* Header */}
-            <header className="header">
-                <a href="/" className="logo" onClick={() => setCurrentPage('cars')}>
-                    <div className="logo-icon">F</div>
-                    FinanceHub
-                </a>
+            {/* <header className="header">
                 <nav className="nav-links">
-                    <a
-                        href="#cars"
-                        className={currentPage === 'cars' ? 'active' : ''}
-                        onClick={(e) => { e.preventDefault(); setCurrentPage('cars'); }}
-                    >
-                        🚗 Car Finder
-                    </a>
                     <a
                         href="#travel"
                         className={currentPage === 'travel' ? 'active' : ''}
@@ -55,9 +44,9 @@ function App() {
                         ✈️ Travel Planner
                     </a>
                 </nav>
-            </header>
+            </header> */}
 
-            {currentPage === 'cars' ? <CarFinderPage /> : <TravelPlannerPage />}
+            {currentPage === 'travel' ? <CarFinderPage /> : <TravelPlannerPage />}
 
             {/* Footer */}
             <footer className="footer">
@@ -301,12 +290,16 @@ function CarFinderPage() {
 // TRAVEL PLANNER PAGE
 // ============================================================================
 
+type StayType = 'hostel' | '2-star' | '3-star' | '4-star' | '5-star';
+
 function TravelPlannerPage() {
     const [currencies, setCurrencies] = useState<Currency[]>([]);
     const [selectedCurrency, setSelectedCurrency] = useState<Currency | null>(null);
     const [origin, setOrigin] = useState<string>('');
     const [budget, setBudget] = useState<string>('');
     const [days, setDays] = useState<string>('7');
+    const [travelers, setTravelers] = useState<string>('1');
+    const [stayType, setStayType] = useState<StayType>('3-star');
     const [destinations, setDestinations] = useState<Destination[]>([]);
     const [aiSummary, setAiSummary] = useState<string>('');
     const [hasSearched, setHasSearched] = useState(false);
@@ -340,6 +333,8 @@ function TravelPlannerPage() {
                     budget: parseFloat(budget) || 0,
                     currency: selectedCurrency.code,
                     days: parseInt(days) || 7,
+                    travelers: parseInt(travelers) || 1,
+                    stayType,
                 }),
             });
 
@@ -359,6 +354,14 @@ function TravelPlannerPage() {
         if (confidence === 'medium') return '#f59e0b';
         return '#94a3b8';
     };
+
+    const stayOptions: { value: StayType; label: string; icon: string }[] = [
+        { value: 'hostel', label: 'Hostel', icon: '🛏️' },
+        { value: '2-star', label: '2 Star', icon: '⭐⭐' },
+        { value: '3-star', label: '3 Star', icon: '⭐⭐⭐' },
+        { value: '4-star', label: '4 Star', icon: '⭐⭐⭐⭐' },
+        { value: '5-star', label: '5 Star', icon: '⭐⭐⭐⭐⭐' },
+    ];
 
     return (
         <>
@@ -456,6 +459,43 @@ function TravelPlannerPage() {
                                         required
                                     />
                                 </div>
+                            </div>
+                        </div>
+
+                        <div className="form-row">
+                            <div className="form-group" style={{ flex: 1 }}>
+                                <label htmlFor="travelers">Number of Travelers</label>
+                                <div className="input-wrapper">
+                                    <span className="input-prefix">👥</span>
+                                    <input
+                                        type="number"
+                                        id="travelers"
+                                        className="form-input"
+                                        placeholder="Travelers"
+                                        value={travelers}
+                                        onChange={(e) => setTravelers(e.target.value)}
+                                        min="1"
+                                        max="20"
+                                        required
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="form-group">
+                            <label>Accommodation Type</label>
+                            <div className="stay-selector">
+                                {stayOptions.map((option) => (
+                                    <button
+                                        key={option.value}
+                                        type="button"
+                                        className={`stay-option ${stayType === option.value ? 'active' : ''}`}
+                                        onClick={() => setStayType(option.value)}
+                                    >
+                                        <span className="stay-icon">{option.icon}</span>
+                                        <span className="stay-label">{option.label}</span>
+                                    </button>
+                                ))}
                             </div>
                         </div>
 

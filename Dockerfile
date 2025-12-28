@@ -1,4 +1,4 @@
-# FinanceHub Docker Image
+# Travel Planner Docker Image
 # Multi-stage build for optimized production image
 
 # Stage 1: Build
@@ -9,14 +9,14 @@ WORKDIR /app
 # Copy package files
 COPY package.json bun.lock* ./
 
-# Install dependencies
+# Install dependencies (including devDependencies for build)
 RUN bun install --frozen-lockfile
 
 # Copy source code
 COPY . .
 
-# Build the client
-RUN bun build client/src/main.tsx --outdir=client/dist --minify
+# Build the client using Vite
+RUN bunx vite build
 
 # Stage 2: Production
 FROM oven/bun:1.3-alpine AS production
@@ -27,9 +27,11 @@ WORKDIR /app
 COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile --production
 
-# Copy built client from builder stage
+# Copy built client from builder stage (Vite outputs to client/dist)
 COPY --from=builder /app/client/dist ./client/dist
-COPY --from=builder /app/client/index.html ./client/index.html
+
+# Create a production index.html that points to built assets
+RUN echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Travel Planner</title><link rel="stylesheet" href="/client/dist/style.css"></head><body><div id="root"></div><script type="module" src="/client/dist/index.js"></script></body></html>' > ./client/index.html
 
 # Copy server source files
 COPY --from=builder /app/index.ts ./

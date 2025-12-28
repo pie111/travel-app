@@ -67,12 +67,23 @@ function getAgent() {
     return agent;
 }
 
+// Stay type labels for the prompt
+const STAY_TYPE_LABELS: Record<string, string> = {
+    'hostel': 'hostels or dormitory-style accommodation',
+    '2-star': '2-star budget hotels',
+    '3-star': '3-star mid-range hotels',
+    '4-star': '4-star hotels',
+    '5-star': '5-star luxury hotels',
+};
+
 // Search using LangGraph agent with Tavily
 async function searchWithAgent(
     origin: string,
     budget: number,
     currency: string,
-    days: number
+    days: number,
+    travelers: number,
+    stayType: string
 ): Promise<AgentTravelResponse | null> {
     const agentInstance = getAgent();
     if (!agentInstance) {
@@ -83,45 +94,67 @@ async function searchWithAgent(
     const currencySymbol = CURRENCY_INFO[currency]?.symbol || currency;
 
     const prompt = `
-You are a budget travel advisor helping travelers get the best value for their money. Search for affordable travel destinations from ${origin} for a ${days}-day trip with a total budget of ${currencySymbol}${budget} ${currency}.
+You are an expert travel advisor. Think step-by-step to find accurate, realistic travel prices.
 
-Use the Tavily search tool to find current 2025/2026 travel prices. Focus on BUDGET travel options:
+TASK: Find travel destinations from ${origin} for ${travelers} traveler(s) on a ${days}-day trip with a budget of ${currencySymbol}${budget} ${currency}.
 
-1. FLIGHTS: Economy class, look for the cheapest round-trip options
-2. HOTELS: Budget hotels, hostels, or affordable guesthouses (NOT luxury hotels)
-3. DAILY BUDGET: This should cover street food, local restaurants, public transport, and budget activities
+STEP 1: SEARCH FOR REAL PRICES
+Use the Tavily search tool to find ACTUAL 2024/2025 prices. Search for:
+- "round trip flights from ${origin} to [destination] price ${currency}"
+- "[destination] ${stayType} hotel prices per night"
+- "[destination] daily travel budget food transport"
 
-Search for ACTUAL prices from travel websites. If you cannot find real pricing data for a destination, do NOT include it.
+STEP 2: VALIDATE PRICES (CRITICAL)
+Before including any destination, verify the prices make sense:
 
-IMPORTANT: 
-- All prices MUST be in ${currency} (${CURRENCY_INFO[currency]?.name || currency})
-- Calculate total cost as: flightCost + (hotelPerNight × ${days}) + (dailyBudget × ${days})
-- Only include destinations where totalCost is within ${currencySymbol}${budget} ${currency}
-- Be realistic about budget travel costs - street food and local transport are cheap!
+FLIGHT PRICE VALIDATION (round-trip per person):
+- Within same continent (e.g., India to SE Asia): ${currency === 'INR' ? '₹15,000 - ₹35,000' : '$200 - $500'}
+- Cross-continental (e.g., India to Europe): ${currency === 'INR' ? '₹40,000 - ₹80,000' : '$600 - $1200'}  
+- Long-haul (e.g., India to USA/Australia): ${currency === 'INR' ? '₹60,000 - ₹120,000' : '$800 - $1500'}
 
-After searching, return ONLY a JSON object in this exact format (no markdown, no explanation):
+HOTEL PRICE VALIDATION (per night):
+- Hostel: ${currency === 'INR' ? '₹500 - ₹2,000' : '$10 - $40'}
+- 2-star: ${currency === 'INR' ? '₹1,500 - ₹4,000' : '$25 - $60'}
+- 3-star: ${currency === 'INR' ? '₹3,000 - ₹8,000' : '$50 - $120'}
+- 4-star: ${currency === 'INR' ? '₹6,000 - ₹15,000' : '$100 - $250'}
+- 5-star: ${currency === 'INR' ? '₹12,000 - ₹50,000' : '$200 - $600'}
+
+DAILY BUDGET VALIDATION (food + transport + activities):
+- Budget travel in Asia: ${currency === 'INR' ? '₹1,500 - ₹3,000' : '$20 - $50'} per day
+- Budget travel in Europe: ${currency === 'INR' ? '₹4,000 - ₹8,000' : '$60 - $120'} per day
+- Budget travel in USA: ${currency === 'INR' ? '₹5,000 - ₹10,000' : '$80 - $150'} per day
+
+⚠️ If a price seems too low (e.g., international flight under ₹10,000 or $150), it's WRONG. Do not include it.
+
+STEP 3: CALCULATE TOTALS
+For ${travelers} traveler(s) with ${STAY_TYPE_LABELS[stayType] || '3-star hotels'}:
+- Total flights = flightCost × ${travelers}
+- Total hotels = hotelPerNight × ${days} nights
+- Total daily = dailyBudget × ${days} days × ${travelers} people
+- Grand total = flights + hotels + daily ≤ ${currencySymbol}${budget}
+
+STEP 4: RETURN JSON
+All prices in ${currency}. Only include destinations where you found REAL price data and the total fits the budget.
 
 {
     "destinations": [
         {
             "destination": "City Name",
             "country": "Country Name",
-            "flightCost": 500,
-            "hotelPerNight": 40,
-            "dailyBudget": 25,
-            "totalCost": 955,
+            "flightCost": 45000,
+            "hotelPerNight": 3500,
+            "dailyBudget": 2000,
+            "totalCost": 83500,
             "highlights": ["highlight1", "highlight2", "highlight3"],
             "bestTimeToVisit": "Month - Month"
         }
     ],
-    "summary": "A brief summary of the best budget travel options found",
+    "summary": "Brief summary of options found",
     "currency": "${currency}",
     "searchDate": "${new Date().toISOString().split('T')[0]}"
 }
 
-Find 5-8 budget-friendly destinations that fit within ${currencySymbol}${budget} ${currency} for ${days} days.
-Use real prices from search results for BUDGET travelers.
-Return ONLY the JSON object, nothing else.
+Return ONLY the JSON object. No markdown, no explanation.
 `;
 
     try {
@@ -205,7 +238,7 @@ export const travelPlugin = new Elysia({ prefix: '/api/travel' })
 
     // Search for travel destinations using LangGraph + Tavily
     .post('/search', async ({ body, set }) => {
-        const { origin, budget, currency, days } = body;
+        const { origin, budget, currency, days, travelers, stayType } = body;
 
         // Check for required API keys
         if (!OPENAI_API_KEY) {
@@ -236,10 +269,10 @@ export const travelPlugin = new Elysia({ prefix: '/api/travel' })
             maximumFractionDigits: 0,
         });
 
-        console.log(`🔍 Searching travel destinations from ${origin} with budget ${formatter.format(budget)} for ${days} days...`);
+        console.log(`🔍 Searching travel destinations from ${origin} with budget ${formatter.format(budget)} for ${days} days, ${travelers} travelers, ${stayType} accommodation...`);
 
         // Use LangGraph agent to search (agent handles currency)
-        const agentResponse = await searchWithAgent(origin, budget, currency, days);
+        const agentResponse = await searchWithAgent(origin, budget, currency, days, travelers, stayType);
 
         if (!agentResponse || !agentResponse.destinations.length) {
             set.status = 500;
@@ -304,6 +337,8 @@ export const travelPlugin = new Elysia({ prefix: '/api/travel' })
             budget: t.Number(),
             currency: t.String(),
             days: t.Number(),
+            travelers: t.Number(),
+            stayType: t.String(),
         }),
     })
 
