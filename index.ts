@@ -24,14 +24,15 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 // ============================================================================
 
 const app = new Elysia()
-    // Serve static assets from dist folder at root (for production builds)
-    .use(staticPlugin({
-        assets: 'dist',
-        prefix: '/',
-    }))
+    // Serve static assets explicitly to avoid Bun import resolution
+    .get('/main.js', () => Bun.file('dist/main.js'))
+    .get('/main.css', () => Bun.file('dist/main.css'))
 
     // Serve the React app at root
-    .get('/', () => Bun.file('dist/index.html'))
+    .get('/', ({ set }) => {
+        set.headers['content-type'] = 'text/html; charset=utf-8';
+        return Bun.file('dist/index.html');
+    })
 
     // API info endpoint
     .get('/api', () => ({
