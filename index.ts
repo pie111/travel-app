@@ -24,14 +24,27 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 // ============================================================================
 
 const app = new Elysia()
-    // Serve static files from client folder
+    // Serve static assets from dist folder at root (for production builds)
+    .use(staticPlugin({
+        assets: 'dist',
+        prefix: '/',
+    }))
+    // Also serve from client folder for development
     .use(staticPlugin({
         assets: 'client',
         prefix: '/client',
     }))
 
-    // Serve the React app at root
-    .get('/', () => Bun.file('client/index.html'))
+    // Serve the React app at root - try dist/index.html first, fallback to client/index.html
+    .get('/', async () => {
+        try {
+            const distIndex = Bun.file('dist/index.html');
+            if (await distIndex.exists()) {
+                return distIndex;
+            }
+        } catch { }
+        return Bun.file('client/index.html');
+    })
 
     // API info endpoint
     .get('/api', () => ({
