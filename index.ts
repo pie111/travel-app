@@ -29,22 +29,9 @@ const app = new Elysia()
         assets: 'dist',
         prefix: '/',
     }))
-    // Also serve from client folder for development
-    .use(staticPlugin({
-        assets: 'client',
-        prefix: '/client',
-    }))
 
-    // Serve the React app at root - try dist/index.html first, fallback to client/index.html
-    .get('/', async () => {
-        try {
-            const distIndex = Bun.file('dist/index.html');
-            if (await distIndex.exists()) {
-                return distIndex;
-            }
-        } catch { }
-        return Bun.file('client/index.html');
-    })
+    // Serve the React app at root
+    .get('/', () => Bun.file('dist/index.html'))
 
     // API info endpoint
     .get('/api', () => ({

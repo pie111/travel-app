@@ -28,11 +28,25 @@ COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile --production
 
 # Copy built client from builder stage (Vite outputs to client/dist)
-# This includes the Vite-generated index.html with correct hashed asset references
+# This includes main.js and main.css (no index.html from Vite)
 COPY --from=builder /app/client/dist ./dist
 
-# Also copy to client folder for fallback
-COPY --from=builder /app/client/dist ./client/dist
+# Create production index.html that references the built assets
+# Vite outputs main.js and main.css without hashes in this config
+RUN echo '<!DOCTYPE html>\
+<html lang="en">\
+<head>\
+<meta charset="UTF-8">\
+<meta name="viewport" content="width=device-width, initial-scale=1.0">\
+<meta name="description" content="Find your perfect travel destination with AI-powered recommendations">\
+<title>Travel Planner - AI-Powered Travel</title>\
+<link rel="stylesheet" href="/main.css">\
+</head>\
+<body>\
+<div id="root"></div>\
+<script type="module" src="/main.js"></script>\
+</body>\
+</html>' > ./dist/index.html
 
 # Copy server source files
 COPY --from=builder /app/index.ts ./
